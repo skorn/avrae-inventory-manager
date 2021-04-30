@@ -464,7 +464,7 @@ if command == "help":
               "search <partial or full item name>: Search for items matching the search term\n"\
               "\nSome settings can be defined in svar \"inventorySettings\". Available settings and their defaults are:\n"\
               "disablePurge: (false) Will disable use of \"purge\" command\n"\
-              "itemInfoGVAR: () Use given GVAR as list of item info. See default for format\n"\
+              "itemInfoGVAR: () Use given GVAR as list of item info. See default for format (66f684d2-42d5-4b0e-8231-c0d6c52b672d)\n"\
               "useEP: (false) Set to true to use EP when exchanging or buying\n"\
               "usePP: (false) Set to true to use PP when exchanging or buying\n"
 
