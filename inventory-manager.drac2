@@ -1,0 +1,474 @@
+embed
+<drac2>
+
+# Load settings and set defaults
+settings=load_json(get_svar("inventorySettings", {}))
+settings["disablePurge"] = settings["disablePurge"] if "disablePurge" in settings else "false"
+settings["itemInfoGVAR"] = settings["itemInfoGVAR"] if "itemInfoGVAR" in settings else "66f684d2-42d5-4b0e-8231-c0d6c52b672d"
+settings["useEP"] = settings["useEP"] if "useEP" in settings else "false"
+settings["usePP"] = settings["usePP"] if "usePP" in settings else "false"
+itemInfo=load_json(get_gvar(settings["itemInfoGVAR"]))
+
+CONTAINER=""
+DESC=""
+ERROR=""
+INVDATA=""
+TITLE=""
+validCommands = [
+    "add",
+    "buy",
+    "exchangecurrency",
+    "help",
+    "list",
+    "purge",
+    "remove",
+    "search"
+]
+
+# Parse which command to start with
+argArray=&ARGS&
+command="help"
+if len(argArray) < 1:
+    command = "list"
+elif sum(c.startswith(argArray[0]) for c in validCommands) == 1:
+    command = [c for c in validCommands if c.startswith(argArray[0])][0]
+    argArray.pop(0)
+elif argArray[0].startswith("?"):
+    command = "help"
+elif argArray[0].startswith("+"):
+    command = "add"
+    argArray[0] = argArray[0].replace("+","")
+elif argArray[0].startswith("-"):
+    command = "remove"
+    argArray[0] = argArray[0].replace("-","")
+else:
+    ERROR += "Invalid command given. Valid commands: " + ", ".join(validCommands) + "\n"
+    command = "help"
+
+# Get current inventory (or initialize it)
+character().set_cvar_nx("inventory", "")
+inv = {}
+if inventory != "":
+    combined = inventory.split("||")
+    for eachCombined in combined:
+        if ": " in eachCombined:
+            split = eachCombined.split(": ")
+            inv[split[0]] = split[1].split("|")
+
+if command == "search":
+    searchTerm = " ".join(argArray)
+    searchTermLower = searchTerm.lower()
+    matchingItems = []
+    for definedItem in itemInfo.keys():
+        tmpPluralForm = definedItem + "s"
+        if definedItem in itemInfo:
+            if "PluralForm" in itemInfo[definedItem]:
+                tmpPluralForm = itemInfo[definedItem].PluralForm
+        if searchTermLower in tmpPluralForm.lower():
+            matchingItems.append(definedItem)
+        elif searchTermLower in definedItem.lower():
+            matchingItems.append(definedItem)
+    if len(matchingItems) < 1:
+        CONTAINER = "No matching items found."
+        INVDATA = "Please try again."
+    for match in matchingItems:
+        itemCost = -1
+        itemWeight = -1
+        PluralForm = match + "s"
+        if match in itemInfo:
+            if "Cost" in itemInfo[match]:
+                itemCost = itemInfo[match].Cost
+            if "Weight" in itemInfo[match]:
+                itemWeight = itemInfo[match].Weight
+            if "PluralForm" in itemInfo[match]:
+                PluralForm = itemInfo[match].PluralForm
+        CONTAINER = f"Matching item{'s' if len(matchingItems) > 1 else ''}:"
+        INVDATA = f"{INVDATA}{match}: {itemCost} gp | {itemWeight} lbs\n"
+
+if command == "exchangecurrency":
+    totalCPValue = 0
+    mod = 0
+    if "CP" in inv:
+        totalCPValue = float(inv.CP[0])
+        inv.CP[0] = 0
+    if "SP" in inv:
+        totalCPValue = totalCPValue + (float(inv.SP[0]) * 10)
+        inv.SP[0] = 0
+    if "EP" in inv:
+        totalCPValue = totalCPValue + (float(inv.EP[0]) * 20)
+        inv.EP[0] = 0
+    if "GP" in inv:
+        totalCPValue = totalCPValue + (float(inv.GP[0]) * 100)
+        inv.GP[0] = 0
+    if "PP" in inv:
+        totalCPValue = totalCPValue + (float(inv.PP[0]) * 1000)
+        inv.PP[0] = 0
+    if "usePP" in settings and settings["usePP"].lower() == "true":
+        mod = totalCPValue % 1000
+        totalPPCount = ( totalCPValue - mod ) / 1000
+        totalCPValue = totalCPValue - (totalPPCount * 1000)
+    mod = totalCPValue % 100
+    totalGPCount = ( totalCPValue - mod ) / 100
+    totalCPValue = totalCPValue - (totalGPCount * 100)
+    if "useEP" in settings and settings["useEP"].lower() == "true":
+        mod = totalCPValue % 20
+        totalEPCount = ( totalCPValue - mod ) / 20
+        totalCPValue = totalCPValue - (totalEPCount * 20)
+    mod = totalCPValue % 10
+    totalSPCount = ( totalCPValue - mod ) / 10
+    totalCPValue = totalCPValue - (totalSPCount * 10)
+    if "CP" in inv and totalCPValue > 0:
+        inv.CP[0] = totalCPValue
+    elif totalCPValue > 1:
+        inv["CP"] = []
+        inv.CP.append(totalCPValue)
+        inv.CP.append(0.01)
+        inv.CP.append(0.02)
+    if "SP" in inv and totalSPCount > 0:
+        inv.SP[0] = totalSPCount
+    elif totalSPCount > 1:
+        inv["SP"] = []
+        inv.SP.append(totalSPCount)
+        inv.SP.append(0.1)
+        inv.SP.append(0.02)
+    if "useEP" in settings and settings["useEP"].lower() == "true":
+        if "EP" in inv and totalEPCount > 0:
+            inv.EP[0] = totalEPCount
+        elif totalEPCount > 1:
+            inv["EP"] = []
+            inv.EP.append(totalEPCount)
+            inv.EP.append(0.2)
+            inv.EP.append(0.02)
+    if "GP" in inv and totalGPCount > 0:
+        inv.GP[0] = totalGPCount
+    elif totalGPCount > 1:
+        inv["GP"] = []
+        inv.GP.append(totalGPCount)
+        inv.GP.append(1)
+        inv.GP.append(0.02)
+    if "usePP" in settings and settings["usePP"].lower() == "true":
+        if "PP" in inv and totalPPCount > 0:
+            inv.PP[0] = totalPPCount
+        elif totalPPCount > 1:
+            inv["PP"] = []
+            inv.PP.append(totalPPCount)
+            inv.PP.append(10)
+            inv.PP.append(0.02)
+    DESC = "Currency conversion completed\n"
+    invArray = []
+    inv = {i: inv[i] for i in inv if float(inv[i][0]) > 0} #strip items that you get rid of the last one
+    for item in inv:
+        invArray.append(item + ": " + str(inv[item][0]) + "|" + (str(inv[item][1]) if len(inv[item]) > 1 else "0") + "|" + (str(inv[item][2]) if len(inv[item]) > 2 else "0"))
+    invString = "||".join(invArray)
+    character().set_cvar("inventory", invString)
+    command = "list"
+
+if command == "buy":
+    doChange = 1
+    startingInv = copy.deepcopy(inv)
+    if argArray[0].isdigit():
+        count = float(argArray.pop(0))
+    else:
+        count = 1
+    lastItem = int(len(argArray)) - 1
+    setItemCost = -1
+    if argArray[lastItem].isdigit():
+        setItemCost = argArray.pop(lastItem)
+    # Maybe add packs here?
+    item = " ".join(argArray)
+    itemLower = item.lower()
+    for definedItem in [k for k in itemInfo] + [k for k in inv]:
+        tmpPluralForm = definedItem + "s"
+        if definedItem in itemInfo:
+            if "PluralForm" in itemInfo[definedItem]:
+                tmpPluralForm = itemInfo[definedItem].PluralForm
+        if itemLower == tmpPluralForm.lower():
+            item = definedItem
+            break
+        elif itemLower == definedItem.lower():
+            item = definedItem
+            break
+    if item in inv:
+        inv[item][0] = float(inv[item][0]) + float(count)
+    else:
+        inv[item] = []
+        inv[item].append(count)
+    itemCost = -1
+    itemWeight = -1
+    PluralForm = item + "s"
+    if item in itemInfo:
+        if "Cost" in itemInfo[item]:
+            itemCost = itemInfo[item].Cost
+        if "Weight" in itemInfo[item]:
+            itemWeight = itemInfo[item].Weight
+        if "PluralForm" in itemInfo[item]:
+            PluralForm = itemInfo[item].PluralForm
+    if itemCost < 0:
+        CONTAINER = "ITEM HAS NO COST"
+        INVDATA = "This item has no cost, perhaps it cannot be bought normally?"
+    else:
+        if len(inv[item]) > 1:
+            inv[item][1] = float(itemCost)
+        else:
+            inv[item].append(float(itemCost))
+        if len(inv[item]) > 2:
+            inv[item][2] = float(itemWeight)
+        else:
+            inv[item].append(float(itemWeight))
+        DESC = f"Bought {str(count)}{PluralForm if count > 1 else item}. New total: {str(inv[item][0])}"
+
+        totalCost = 0
+        totalCost = ((float(inv[item][1]) * 100) if count == 1 else (float(inv[item][1]) * 100 * count))
+        if setItemCost >= 0:
+            totalCost = setItemCost
+
+        # Spend CP first
+        tmpCost = totalCost
+        cpCost = tmpCost % 10
+        if cpCost != 0:
+            tmpCost = tmpCost - cpCost
+            if "CP" in inv:
+                if float(inv.CP[0]) < cpCost:
+                    inv.CP[0] = float(inv.CP[0]) + 10 - cpCost
+                    tmpCost = tmpCost + 10
+                else:
+                    inv.CP[0] = float(inv.CP[0]) - cpCost
+            else:
+                inv.CP = [10 - cpCost, 0.01, 0.02]
+                tmpCost = tmpCost + 10
+        if "CP" in inv:
+            while float(inv.CP[0]) > 9 and tmpCost > 9:
+                inv.CP[0] = float(inv.CP[0]) - 10
+                tmpCost = tmpCost - 10
+
+        # Spend SP next
+        tmpCost = tmpCost / 10
+        spCost = tmpCost % 10
+        if spCost != 0:
+            tmpCost = tmpCost - spCost
+            if "SP" in inv:
+                if float(inv.SP[0]) < spCost:
+                    inv.SP[0] = float(inv.SP[0]) + 10 - spCost
+                    tmpCost = tmpCost + 10
+                else:
+                    inv.SP[0] = float(inv.SP[0]) - spCost
+            else:
+                inv.SP = [10 - spCost, 0.1, 0.02]
+                tmpCost = tmpCost + 10
+        if "SP" in inv:
+            while float(inv.SP[0]) > 9 and tmpCost > 9:
+                inv.SP[0] = float(inv.SP[0]) - 10
+                tmpCost = tmpCost - 10
+
+        # Spend EP next if used
+        if "useEP" in settings and settings.useEP == "true":
+            epCost = tmpCost / 5 % 2
+            if epCost != 0:
+                tmpCost = tmpCost - 5
+                if "EP" in inv:
+                    if float(inv.EP[0]) == 0:
+                        inv.EP[0] = float(inv.EP[0]) + 1
+                        tmpCost = tmpCost + 10
+                    else:
+                        inv.EP[0] = float(inv.EP[0]) - epCost
+                else:
+                    inv.EP = [1, 0.5, 0.02]
+                    tmpCost = tmpCost + 10
+            if "EP" in inv:
+                while float(inv.EP[0]) > 1 and tmpCost > 4:
+                    inv.EP[0] = float(inv.EP[0]) - 1
+                    tmpCost = tmpCost - 5
+
+        # Spend GP next
+        tmpCost = tmpCost / 10
+        gpCost = tmpCost % 10
+        if gpCost != 0:
+            tmpCost = tmpCost - gpCost
+            if "GP" in inv:
+                if float(inv.GP[0]) < gpCost:
+                    inv.GP[0] = float(inv.GP[0]) + 10 - gpCost
+                    tmpCost = tmpCost + 10
+                else:
+                    inv.GP[0] = float(inv.GP[0]) - gpCost
+            else:
+                inv.GP = [10 - gpCost, 0.1, 0.02]
+                tmpCost = tmpCost + 10
+        if "GP" in inv:
+            while float(inv.GP[0]) > 9 and tmpCost > 9:
+                inv.GP[0] = float(inv.GP[0]) - 10
+                tmpCost = tmpCost - 10
+
+        command = "list"
+
+        # Spend PP next
+        if "usePP" in settings and settings.usePP == "true":
+            tmpCost = tmpCost / 10
+            ppCost = tmpCost % 10
+            if ppCost != 0:
+                tmpCost = tmpCost - ppCost
+                if "PP" in inv:
+                    if float(inv.PP[0]) < ppCost:
+                        inv.PP[0] = float(inv.PP[0]) + 10 - ppCost
+                        tmpCost = tmpCost + 10
+                    else:
+                        inv.PP[0] = float(inv.PP[0]) - ppCost
+                else:
+                    inv.PP = [10 - ppCost, 0.1, 0.02]
+                    tmpCost = tmpCost + 10
+            if "PP" in inv:
+                while float(inv.PP[0]) > 9 and tmpCost > 9:
+                    inv.PP[0] = float(inv.PP[0]) - 10
+                    tmpCost = tmpCost - 10
+        if tmpCost > 0:
+            DESC = "Insufficient Funds. You cannot afford " + item + "\n"
+            inv = startingInv
+
+        invArray = []
+        inv = {i: inv[i] for i in inv if float(inv[i][0]) > 0} #strip items that you get rid of the last one
+        for item in inv:
+            invArray.append(item + ": " + str(inv[item][0]) + "|" + (str(inv[item][1]) if len(inv[item]) > 1 else "0") + "|" + (str(inv[item][2]) if len(inv[item]) > 2 else "0"))
+        invString = "||".join(invArray)
+        character().set_cvar("inventory", invString)
+        command = "list"
+
+
+
+# Adjust counts, then set to print bag output.
+if command == "add" or command == "remove":
+    if argArray[0].isdigit():
+        count = float(argArray.pop(0))
+    else:
+        count = 1
+    item = " ".join(argArray)
+    itemLower = item.lower()
+    # Maybe add packs here?
+    for definedItem in [k for k in itemInfo] + [k for k in inv]:
+        tmpPluralForm = item + "s"
+        if definedItem in itemInfo:
+            if "PluralForm" in itemInfo[definedItem]:
+                tmpPluralForm = itemInfo[definedItem].PluralForm
+        if itemLower == tmpPluralForm.lower():
+            item = definedItem
+            break
+        elif itemLower == definedItem.lower():
+            item = definedItem
+            break
+    if item in inv:
+        if command == "add":
+            inv[item][0] = float(inv[item][0]) + float(count)
+        else:
+            inv[item][0] = float(inv[item][0]) - float(count)
+    else:
+        if command == "remove":
+            ERROR += f"Tried to remove{item}, but it was not found.\n"
+        else:
+            inv[item] = []
+            inv[item].append(count)
+    itemCost = 0
+    itemWeight = 0
+    PluralForm = item + "s"
+    if item in itemInfo:
+        if "Cost" in itemInfo[item]:
+            itemCost = itemInfo[item].Cost
+        if "Weight" in itemInfo[item]:
+            itemWeight = itemInfo[item].Weight
+        if "PluralForm" in itemInfo[item]:
+            PluralForm = itemInfo[item].PluralForm
+    if command == "add":
+        DESC = f"Added {int(float(count))} {PluralForm if count > 1 else item}. New total: {int(float(inv[item][0]))}\n"
+    else:
+        if item in inv and float(inv[item][0]) < 0:
+            DESC = "Removed " + str(inv[item][0] - count) + " " + (PluralForm if count > 1 else item) + ". New total: " + "0 (can't go negative, tried to set to " + str(inv[item][0]) + ")\n"
+        elif item in inv:
+            DESC = "Removed " + str(count) + " " + (PluralForm if count > 1 else item) + ". New total: " + str(inv[item][0]) + "\n"
+    if item in inv and len(inv[item]) > 1:
+        inv[item][1] = float(itemCost)
+    elif item in inv:
+        inv[item].append(float(itemCost))
+    if item in inv and len(inv[item]) > 2:
+        inv[item][2] = float(itemWeight)
+    elif item in inv:
+        inv[item].append(float(itemWeight))
+    invArray = []
+    inv = {i: inv[i] for i in inv if float(inv[i][0]) > 0} #strip items that you get rid of the last one
+    for item in inv:
+        invArray.append(item + ": " + str(inv[item][0]) + "|" + (str(inv[item][1]) if len(inv[item]) > 1 else "0") + "|" + (str(inv[item][2]) if len(inv[item]) > 2 else "0"))
+    invString = "||".join(invArray)
+    character().set_cvar("inventory", invString)
+    command = "list"
+
+
+if command == "purge":
+    if settings.disablePurge == "true":
+        DESC = "Attempted to purge, but \"disablePurge\" set to true in inventorySettings svar\n"
+    else:
+        character().set_cvar("inventory", "")
+        DESC = "ALL ITEMS PURGED (sure hope that wasn't a mistake)\n"
+        command == "list"
+
+if command == "list":
+    TITLE = name + "'s Inventory"
+    if DESC == "":
+        DESC = "Current inventory:"
+    wallet = " Wallet ("
+    coinCount = 0
+    if "PP" in inv:
+        wallet = wallet + str(int(float(inv.PP[0]))) + "PP "
+        coinCount = float(inv.PP[0])
+    if "GP" in inv:
+        wallet = wallet + str(int(float(inv.GP[0]))) + "GP "
+        coinCount = coinCount + float(inv.GP[0])
+    if "EP" in inv:
+        wallet = wallet + str(int(float(inv.EP[0]))) + "EP "
+        coinCount = coinCount + float(inv.EP[0])
+    if "SP" in inv:
+        wallet = wallet + str(int(float(inv.SP[0]))) + "SP "
+        coinCount = coinCount + float(inv.SP[0])
+    if "CP" in inv:
+        wallet = wallet + str(int(float(inv.CP[0]))) + "CP "
+        coinCount = coinCount + float(inv.CP[0])
+    if coinCount > 0:
+        coinWeight = coinCount * 0.02
+        DESC = DESC + " " + wallet + f" -- {coinWeight:.2f} lbs)"
+    INVDATA = ""
+    containerWeight = 0
+    containerValue = 0
+    for item in inv:
+        if item in ["CP", "SP", "EP", "GP", "PP"]:
+            continue
+        PluralForm = item + "s"
+        if item in itemInfo and "PluralForm" in itemInfo[item]:
+            PluralForm = itemInfo[item].PluralForm
+        itemCount = f"{int(float(inv[item][0]))}x " + (PluralForm if float(inv[item][0]) > 1.0 else item) + " "
+        itemWeight = ("(" + str(inv[item][2]) + (" lbs. | " + str(float(inv[item][0]) * float(inv[item][2])) if float(inv[item][0]) > 1 else "") + " lbs.) ") if float(inv[item][2]) > 0 else ""
+        itemValue = ("[" + str(inv[item][1]) + (" gp | " + str(float(inv[item][0]) * float(inv[item][1])) if float(inv[item][0]) > 1 else "") + " gp) ") if float(inv[item][1]) > 0 else ""
+        INVDATA += itemCount + itemWeight + itemValue + "\n"
+        if float(inv[item][1]) > 0:
+            containerValue += float(inv[item][1]) * float(inv[item][0])
+        if float(inv[item][2]) > 0:
+            containerWeight += float(inv[item][2]) * float(inv[item][0])
+    CONTAINER = "Backpack (" + containerWeight + " lbs.) [" + containerValue + " gp]:"
+    if INVDATA == "":
+        INVDATA = "*EMPTY*"
+
+if command == "help":
+    TITLE = "Documentation"
+    CONTAINER = "!inv commands:"
+    INVDATA = "add [count] <item>: Adds given number of items (defaults to 1)\n"\
+              "buy [count] <item>: Buys given number of items from available funds (defaults to 1)\n"\
+              "exchangecurrency: Exchange currency to minimum coins. (ie: 100cp becomes 1gp)\n"\
+              "help|?: This help text\n"\
+              "list: List current inventory (default command if none given)\n"\
+              "purge: Purge ALL inventory (irreversible). Set svar \"inventorySettings\" to json including \"disablePurge\" as \"true\" to disable\n"\
+              "remove [count] <item>: Removes given number of items (defaults to 1)\n"\
+              "search <partial or full item name>: Search for items matching the search term\n"\
+              "\nSome settings can be defined in svar \"inventorySettings\". Available settings and their defaults are:\n"\
+              "disablePurge: (false) Will disable use of \"purge\" command\n"\
+              "itemInfoGVAR: () Use given GVAR as list of item info. See default for format\n"\
+              "useEP: (false) Set to true to use EP when exchanging or buying\n"\
+              "usePP: (false) Set to true to use PP when exchanging or buying\n"
+
+</drac2>
+-title "{{TITLE}}"
+-desc "{{ERROR}}{{DESC}}"
+-f "{{CONTAINER}}|{{INVDATA}}"
