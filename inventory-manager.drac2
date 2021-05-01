@@ -3,17 +3,27 @@ embed
 
 # Load settings and set defaults
 settings=load_json(get_svar("inventorySettings", {}))
+settings["additionalGVARs"] = settings["additionalGVARs"] if "additionalGVARs" in settings else []
 settings["disablePurge"] = settings["disablePurge"] if "disablePurge" in settings else "false"
 settings["itemInfoGVAR"] = settings["itemInfoGVAR"] if "itemInfoGVAR" in settings else "66f684d2-42d5-4b0e-8231-c0d6c52b672d"
 settings["useEP"] = settings["useEP"] if "useEP" in settings else "false"
 settings["usePP"] = settings["usePP"] if "usePP" in settings else "false"
-itemInfo=load_json(get_gvar(settings["itemInfoGVAR"]))
 
-CONTAINER=""
+#Load item info, in escalating priority
+itemInfo=load_json(get_gvar(settings["itemInfoGVAR"]))
+for itemGVAR in settings["additionalGVARs"]:
+    tmpInfo=load_json(get_gvar(itemGVAR))
+    for item in tmpInfo:
+        itemInfo[item] = tmpInfo[item]
+
+# Set some variables to be used in embed output
+TITLE=""
 DESC=""
 ERROR=""
+CONTAINER=""
 INVDATA=""
-TITLE=""
+
+# Parse which command was issued
 validCommands = [
     "add",
     "buy",
@@ -26,38 +36,37 @@ validCommands = [
     "remove",
     "search"
 ]
-
-# Parse which command to start with
 argArray=&ARGS&
-command="help"
-if len(argArray) < 1:
+command="help" # Default to help if things don't parse properly.
+if len(argArray) < 1: # If there are no arguments default to list inventory
     command = "list"
-elif sum(c.startswith(argArray[0]) for c in validCommands) == 1:
-    command = [c for c in validCommands if c.startswith(argArray[0])][0]
+elif sum(c.startswith(argArray[0].lower()) for c in validCommands) == 1: # If the provided command matches a unique
+    command = [c for c in validCommands if c.startswith(argArray[0])][0] # beginning use it ("ie: exch for exchangecurrency")
     argArray.pop(0)
-elif argArray[0].startswith("?"):
+elif argArray[0].startswith("?"): # "?" as shorthand for "help"
     command = "help"
-elif argArray[0].startswith("+"):
+elif argArray[0].startswith("+"): # "+20 xxx" as shorthand for "add 20 xxx"
     command = "add"
     argArray[0] = argArray[0].replace("+","")
-elif argArray[0].startswith("-"):
+elif argArray[0].startswith("-"): # "-20 xxx" as shorthand for remove 20 xxx"
     command = "remove"
     argArray[0] = argArray[0].replace("-","")
-else:
-    ERROR += "Invalid command given. Valid commands: " + ", ".join(validCommands) + "\n"
+else: # If provided command doesn't parse to a valid one, provide that as error and print out help.
+    ERROR += f"Invalid command given ({argArray[0]}). Valid commands: {", ".join(validCommands)}\n"
     command = "help"
 
 
 # Get current inventory (or initialize it)
-character().set_cvar_nx("inventory", "")
+character().set_cvar_nx("inventory", "") # Set the cvar if not set to anything already.
 inv = {}
 if inventory != "":
-    combined = inventory.split("||")
+    combined = inventory.split("||") # Each item is separated by "||"
     for eachCombined in combined:
-        if ": " in eachCombined:
+        if ": " in eachCombined: # Item formatted as "Item Name: (quantity in inv)|(gp value)|(weight)"
             split = eachCombined.split(": ")
             inv[split[0]] = split[1].split("|")
 
+# Add and Remove grouped as they are almost identical.
 if command == "add" or command == "remove":
     if argArray[0].isdigit():
         count = float(argArray.pop(0))
@@ -65,39 +74,36 @@ if command == "add" or command == "remove":
         count = 1
     item = " ".join(argArray)
     itemLower = item.lower()
-    # Maybe add packs here?
-    for definedItem in [k for k in itemInfo] + [k for k in inv]:
-        tmpPluralForm = item + "s"
+    # TODO: Maybe add packs here?
+    PluralForm = item + "s"
+    for definedItem in [k for k in itemInfo] + [k for k in inv]: # Check for pluralized item names
         if definedItem in itemInfo:
-            if "PluralForm" in itemInfo[definedItem]:
-                tmpPluralForm = itemInfo[definedItem].PluralForm
-        if itemLower == tmpPluralForm.lower():
+            if "PluralForm" in itemInfo[definedItem]:            # If PluralForm defined in item info use that.
+                PluralForm = itemInfo[definedItem].PluralForm # IE: Staff -> staves
+        if itemLower == PluralForm.lower():
             item = definedItem
             break
         elif itemLower == definedItem.lower():
             item = definedItem
             break
-    if item in inv:
+    if item in inv:  # If a copy of the item exists in inventory modify the count.
         if command == "add":
             inv[item][0] = float(inv[item][0]) + float(count)
         else:
             inv[item][0] = float(inv[item][0]) - float(count)
-    else:
+    else:  # IF no copies owned, error if trying to remove, otherwise append it to inventory
         if command == "remove":
             ERROR += f"Tried to remove{item}, but it was not found.\n"
         else:
             inv[item] = []
             inv[item].append(count)
-    itemCost = 0
+    itemCost = 0                # Lookup 
     itemWeight = 0
-    PluralForm = item + "s"
     if item in itemInfo:
         if "Cost" in itemInfo[item]:
             itemCost = itemInfo[item].Cost
         if "Weight" in itemInfo[item]:
             itemWeight = itemInfo[item].Weight
-        if "PluralForm" in itemInfo[item]:
-            PluralForm = itemInfo[item].PluralForm
     if command == "add":
         DESC = f"Added {int(float(count))} {PluralForm if count > 1 else item}. New total: {int(float(inv[item][0]))}\n"
     else:
@@ -123,8 +129,6 @@ if command == "add" or command == "remove":
 
 
 if command == "buy":
-    doChange = 1
-    startingInv = copy.deepcopy(inv)
     if argArray[0].isdigit():
         count = float(argArray.pop(0))
     else:
@@ -280,7 +284,13 @@ if command == "buy":
                     tmpCost = tmpCost - 10
         if tmpCost > 0:
             DESC = "Insufficient Funds. You cannot afford " + item + "\n"
-            inv = startingInv
+            inv = {}
+            if inventory != "":
+                combined = inventory.split("||")
+                for eachCombined in combined:
+                    if ": " in eachCombined:
+                        split = eachCombined.split(": ")
+                        inv[split[0]] = split[1].split("|")
 
         invArray = []
         inv = {i: inv[i] for i in inv if float(inv[i][0]) > 0} #strip items that you get rid of the last one
@@ -377,21 +387,27 @@ if command == "export":
 if command == "help":
     TITLE = "Documentation"
     CONTAINER = "!inv commands:"
-    INVDATA = "add [count] <item>: Adds given number of items (defaults to 1)\n"\
-              "buy [count] <item>: Buys given number of items from available funds (defaults to 1)\n"\
-              "exchangecurrency: Exchange currency to minimum coins. (ie: 100cp becomes 1gp)\n"\
-              "export: Prints out a string that if saved can be used to import inventory exactly\n"\
+    INVDATA = "add [count] <item>: Adds number of items (defaults to 1)\n"\
+              "buy [count] <item>: Buys number of items from available funds (defaults to 1)\n"\
+              "exchangecurrency: Exchange currency. (ie: 100cp becomes 1gp)\n"\
+              "export: Prints string that can be used to import inventory exactly\n"\
               "help|?: This help text\n"\
-              "import <inventory string from export>: Imports a saved inventory from export. Will *replace ALL* existing inventory\n"\
-              "list: List current inventory (default command if none given)\n"\
-              "purge: Purge ALL inventory (irreversible). Set svar \"inventorySettings\" to json including \"disablePurge\" as \"true\" to disable\n"\
+              "import <export string>: Imports string from export command. Will *replace ALL* existing inventory\n"\
+              "list: List current inventory (default command)\n"\
+              "purge: Purge ALL inventory (irreversible)."\
               "remove [count] <item>: Removes given number of items (defaults to 1)\n"\
-              "search <partial or full item name>: Search for items matching the search term\n"\
-              "\nSome settings can be defined in svar \"inventorySettings\". Available settings and their defaults are:\n"\
+              "search <text>: Search for items matching text\n"\
+              "settings: Display available settings and their defaults"
+
+if command == "settings":
+    TITLE = "Configuration"
+    CONTAINER = "Settings for \"inventorySettings\" svar"
+    INVDATA = "Optional settings that can be defined in svar \"inventorySettings\" and their defaults are:\n"\
+              "additionalGVARs: ([]) Load GVAR lists in ascending order. IE: [1] overwrites the same item in [0]"\
               "disablePurge: (false) Will disable use of \"purge\" command\n"\
-              "itemInfoGVAR: () Use given GVAR as list of item info. See default for format\n"\
-              "useEP: (false) Set to true to use EP when exchanging or buying\n"\
-              "usePP: (false) Set to true to use PP when exchanging or buying\n"
+              "itemInfoGVAR: (66f684d2-42d5-4b0e-8231-c0d6c52b672d) Use given GVAR as list of item info. See default for format\n"\
+              "useEP: (false) Use EP when exchanging or buying\n"\
+              "usePP: (false) Use PP when exchanging or buying\n"
 
 
 if command == "import":
