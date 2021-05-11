@@ -52,7 +52,7 @@ elif argArray[0].startswith("-"): # "-20 xxx" as shorthand for remove 20 xxx"
     command = "remove"
     argArray[0] = argArray[0].replace("-","")
 else: # If provided command doesn't parse to a valid one, provide that as error and print out help.
-    ERROR += f"Invalid command given ({argArray[0]}). Valid commands: {", ".join(validCommands)}\n"
+    ERROR += "Invalid command given (" + argArray[0] + "). Valid commands: " + ", ".join(validCommands) + "\n"
     command = "help"
 
 
@@ -77,15 +77,22 @@ if command == "add" or command == "remove":
     # TODO: Maybe add packs here?
     PluralForm = item + "s"
     for definedItem in [k for k in itemInfo] + [k for k in inv]: # Check for pluralized item names
+        tmpPluralForm = PluralForm
         if definedItem in itemInfo:
             if "PluralForm" in itemInfo[definedItem]:            # If PluralForm defined in item info use that.
-                PluralForm = itemInfo[definedItem].PluralForm # IE: Staff -> staves
-        if itemLower == PluralForm.lower():
+                tmpPluralForm = itemInfo[definedItem].PluralForm # IE: Staff -> Staves
+            else:
+                tmpPluralForm = f"{definedItem}s"
+        if itemLower == tmpPluralForm.lower():
             item = definedItem
+            PluralForm = tmpPluralForm
             break
         elif itemLower == definedItem.lower():
             item = definedItem
+            PluralForm = tmpPluralForm
             break
+    if sum(i.lower().startswith(item.lower()) for i in itemInfo.keys()) == 1: # If the provided command matches a unique
+        item = [i for i in itemInfo.keys() if i.lower().startswith(item.lower())][0] # beginning use it ("ie: exch for exchangecurrency")
     if item in inv:  # If a copy of the item exists in inventory modify the count.
         if command == "add":
             inv[item][0] = float(inv[item][0]) + float(count)
@@ -137,7 +144,7 @@ if command == "buy":
     setItemCost = -1
     if argArray[lastItem].isdigit():
         setItemCost = argArray.pop(lastItem)
-    # Maybe add packs here?
+    # TODO Maybe add packs here?
     item = " ".join(argArray)
     itemLower = item.lower()
     for definedItem in [k for k in itemInfo] + [k for k in inv]:
@@ -197,7 +204,7 @@ if command == "buy":
                 else:
                     inv.CP[0] = float(inv.CP[0]) - cpCost
             else:
-                inv.CP = [10 - cpCost, 0.01, 0.02]
+                inv["CP"] = [10 - cpCost, 0.01, 0.02]
                 tmpCost = tmpCost + 10
         if "CP" in inv:
             while float(inv.CP[0]) > 9 and tmpCost > 9:
@@ -216,7 +223,7 @@ if command == "buy":
                 else:
                     inv.SP[0] = float(inv.SP[0]) - spCost
             else:
-                inv.SP = [10 - spCost, 0.1, 0.02]
+                inv["SP"] = [10 - spCost, 0.1, 0.02]
                 tmpCost = tmpCost + 10
         if "SP" in inv:
             while float(inv.SP[0]) > 9 and tmpCost > 9:
@@ -235,7 +242,7 @@ if command == "buy":
                     else:
                         inv.EP[0] = float(inv.EP[0]) - epCost
                 else:
-                    inv.EP = [1, 0.5, 0.02]
+                    inv["EP"] = [1, 0.5, 0.02]
                     tmpCost = tmpCost + 10
             if "EP" in inv:
                 while float(inv.EP[0]) > 1 and tmpCost > 4:
@@ -254,7 +261,7 @@ if command == "buy":
                 else:
                     inv.GP[0] = float(inv.GP[0]) - gpCost
             else:
-                inv.GP = [10 - gpCost, 0.1, 0.02]
+                inv["GP"] = [10 - gpCost, 0.1, 0.02]
                 tmpCost = tmpCost + 10
         if "GP" in inv:
             while float(inv.GP[0]) > 9 and tmpCost > 9:
@@ -276,7 +283,7 @@ if command == "buy":
                     else:
                         inv.PP[0] = float(inv.PP[0]) - ppCost
                 else:
-                    inv.PP = [10 - ppCost, 0.1, 0.02]
+                    inv["PP"] = [10 - ppCost, 0.1, 0.02]
                     tmpCost = tmpCost + 10
             if "PP" in inv:
                 while float(inv.PP[0]) > 9 and tmpCost > 9:
@@ -427,8 +434,8 @@ if command == "purge":
         DESC = "Attempted to purge, but \"disablePurge\" set to true in inventorySettings svar\n"
     else:
         character().set_cvar("inventory", "")
-        DESC = "ALL ITEMS PURGED (sure hope that wasn't a mistake)\n"
-        command == "list"
+        DESC = "ALL ITEMS PURGED (sure hope that wasn't a mistake)\nPrevious inventory just in case\n"
+        command = "list"
 
 
 if command == "search":
