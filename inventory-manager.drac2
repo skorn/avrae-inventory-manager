@@ -378,8 +378,8 @@ if command == "exchangecurrency":
             inv.PP.append(10)
             inv.PP.append(0.02)
     DESC = "Currency conversion completed\n"
-    invArray = []
     inv = {i: inv[i] for i in inv if float(inv[i][0]) > 0} #strip items that you get rid of the last one
+    invArray = []
     for item in inv:
         invArray.append(item + ": " + str(inv[item][0]) + "|" + (str(inv[item][1]) if len(inv[item]) > 1 else "0") + "|" + (str(inv[item][2]) if len(inv[item]) > 2 else "0"))
     invString = "||".join(invArray)
@@ -465,8 +465,10 @@ if command == "search":
                 itemWeight = itemInfo[match].Weight
             if "PluralForm" in itemInfo[match]:
                 PluralForm = itemInfo[match].PluralForm
+        itemCostStr = "N/A" if itemCost < 0 else str(itemCost) + " gp"
+        itemWeightStr = str(itemWeight) + " lbs" if itemWeight > 0 else "Negligible"
         CONTAINER = f"Matching item{'s' if len(matchingItems) > 1 else ''}:"
-        INVDATA = f"{INVDATA}{match}: {itemCost} gp | {itemWeight} lbs\n"
+        INVDATA = f"{INVDATA}{match}: {itemCostStr} | {itemWeightStr}\n"
 
 
 if command == "list": # Liisted last as other commands will do work and then set to list
@@ -503,8 +505,8 @@ if command == "list": # Liisted last as other commands will do work and then set
         if item in itemInfo and "PluralForm" in itemInfo[item]:
             PluralForm = itemInfo[item].PluralForm
         itemCount = f"{int(float(inv[item][0]))}x " + (PluralForm if float(inv[item][0]) > 1.0 else item) + " "
-        itemWeight = ("(" + str(inv[item][2]) + (" lbs. | " + str(float(inv[item][0]) * float(inv[item][2])) if float(inv[item][0]) > 1 else "") + " lbs.) ") if float(inv[item][2]) > 0 else ""
-        itemValue = ("[" + str(inv[item][1]) + (" gp | " + str(float(inv[item][0]) * float(inv[item][1])) if float(inv[item][0]) > 1 else "") + " gp) ") if float(inv[item][1]) > 0 else ""
+        itemWeight = ("(" + str(inv[item][2]) + (" lbs. | " + str(float(inv[item][0]) * float(inv[item][2])) if float(inv[item][0]) > 1 else "") + " lbs.) ") if float(inv[item][2]) > 0 else "(Negligible) "
+        itemValue = ("[" + str(inv[item][1]) + (" gp | " + str(float(inv[item][0]) * float(inv[item][1])) if float(inv[item][0]) > 1 else "") + " gp] ") if float(inv[item][1]) > 0 else "[N/A]"
         INVDATA += itemCount + itemWeight + itemValue + "\n"
         if float(inv[item][1]) > 0:
             containerValue += float(inv[item][1]) * float(inv[item][0])
