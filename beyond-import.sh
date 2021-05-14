@@ -12,15 +12,17 @@ characterNumber=$(echo "$beyondLink" | sed 's|^.*characters/||;s|/.*||')
 
 characterData=$(curl -s https://character-service.dndbeyond.com/character/v3/character/$characterNumber)
 
-output=$(echo $characterData | jq -r '.data.currencies | "CP: \(.cp).0|0.01|0.02||SP: \(.sp).0|0.1|0.02||EP: \(.ep).0|0.5|0.02||GP: \(.gp).0|1.0|0.02||PP: \(.pp).0|10|0.02"')
+wallet=$(echo $characterData | jq -c '.data.currencies | [to_entries | .[] | .key |= ascii_upcase | select(.value > 0) | .value = {"Count": .value, "Weight": 0.02, "Cost": (if .key == "CP" then 0.01 else (if .key == "SP" then 0.1 else (if .key == "EP" then 0.5 else (if .key == "GP" then 1.0 else (if .key == "PP" then 10 else -1 end) end) end) end)  end)}] | from_entries')
 
-items=$(echo $characterData | jq -r '.data.inventory[].definition | "\(.name): XXX.0|\(.cost)|\(.weight)"' | sort | uniq -c )
+inventory=""
+items=$(echo $characterData | jq -rc '.data.inventory[].definition | "\"\(.name)\": {\"Count\": XXX.0, \"Cost\": \(.cost), \"Weight\": \(.weight)}"' | sed 's/\\//g' | sort | uniq -c )
 for itemRaw in $items; do
   number=$(echo $itemRaw | sed 's/^ *//;s/ .*//')
   itemFormatted=$(echo $itemRaw | sed "s/^ *$number //;s/XXX/$number/")
-  output="$output||$itemFormatted"
+  inventory="$inventory, $itemFormatted"
 done
-output=$(echo $output | sed 's/^||//')
+inventory=$(echo $inventory | sed 's/^, //')
+output="{\"Wallet\": $wallet, \"Carried\": {$inventory}}"
 
-echo $output
+echo $output | jq -c | sed 's/"/\\"/g'
 IFS=$OLDIFS
