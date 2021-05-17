@@ -35,6 +35,7 @@ validCommands = [
     "move",
     "purge",
     "remove",
+    "shop",
     "search"
 ]
 argArray=&ARGS&
@@ -42,7 +43,7 @@ currencies=["pp", "gp", "ep", "sp", "cp"]
 command="help" # Default to help if things don't parse properly.
 bag="" # Which container to change/show
 newbag="" # Which container to change/show
-private=0 # By default respond in channel
+timeout=" -t 10 " # By default respond in channel
 count=1
 customCost = -1.0
 customWeight = -1.0
@@ -56,9 +57,9 @@ if "-newbag" in argArray:
     index=argArray.index("-newbag")
     argArray.pop(index)
     newbag=argArray.pop(index).capitalize()
-if "-private" in argArray:
-    private=1
-    argArray.pop(argArray.index("-private"))
+if "-keep" in argArray:
+    timeout=""
+    argArray.pop(argArray.index("-keep"))
 if "-count" in argArray:
     index=argArray.index("-count")
     argArray.pop(index)
@@ -120,37 +121,19 @@ if command == "add" or command == "remove":
     if useBag not in inv:
         inv[useBag] = {}
     itemLower = item.lower()
-    # TODO: Maybe add packs here?
     PluralForm = item + "s"
-    if sum(i.lower().startswith(item.lower()) for i in itemInfo.keys()) == 1: # If the provided command matches a unique
-        item = [i for i in itemInfo.keys() if i.lower().startswith(item.lower())][0] # beginning use it ("ie: exch for exchangecurrency")
     for definedItem in [k for k in itemInfo]: # Check for pluralized item names
         tmpPluralForm = PluralForm
-        if definedItem in itemInfo:
-            if "PluralForm" in itemInfo[definedItem]:            # If PluralForm defined in item info use that.
-                tmpPluralForm = itemInfo[definedItem].PluralForm # IE: Staff -> Staves
-            else:
-                tmpPluralForm = f"{definedItem}s"
-        if itemLower == tmpPluralForm.lower():
-            item = definedItem
-            PluralForm = tmpPluralForm
-            break
-        elif itemLower == definedItem.lower():
+        if "PluralForm" in itemInfo[definedItem]:            # If PluralForm defined in item info use that.
+            tmpPluralForm = itemInfo[definedItem].PluralForm # IE: Staff -> Staves
+        else:
+            tmpPluralForm = f"{definedItem}s"
+        if item.lower() == tmpPluralForm.lower() or item.lower() == tmpPluralForm.lower():
             item = definedItem
             PluralForm = tmpPluralForm
             break
     if sum(i.lower().startswith(item.lower()) for i in itemInfo.keys()) == 1: # If the provided command matches a unique
         item = [i for i in itemInfo.keys() if i.lower().startswith(item.lower())][0] # beginning use it ("ie: exch for exchangecurrency")
-    if item in inv[useBag]:  # If a copy of the item exists in inventory modify the count.
-        if command == "add":
-            inv[useBag][item]["Count"] = float(inv[useBag][item]["Count"]) + float(count)
-        else:
-            inv[useBag][item]["Count"] = float(inv[useBag][item]["Count"]) - float(count)
-    else:  # IF no copies owned, error if trying to remove, otherwise append it to inventory
-        if command == "remove":
-            ERROR += f"Tried to remove {item}, but it was not found.\n"
-        else:
-            inv[useBag][item] = {"Count": count}
     itemCost = -1.0                # Lookup 
     itemWeight = 0.0
     if item in itemInfo:
@@ -163,24 +146,20 @@ if command == "add" or command == "remove":
     if customWeight >= 0:
         itemWeight = customWeight
     if command == "add":
+        inv[useBag][item] = {"Count": (float(inv[useBag][item]["Count"]) if item in inv[useBag] else 0.0) + float(count), "Cost": itemCost, "Weight": itemWeight}
         DESC = f"Added {int(float(count))} {PluralForm if count > 1 else item}. New total: {int(float(inv[useBag][item]['Count']))}\n"
-    else:
-        if item in inv[useBag] and float(inv[useBag][item]["Count"]) < 0:
-            DESC = "Removed " + str(inv[useBag][item]["Count"] - count) + " " + (PluralForm if count > 1 else item) + ". New total: " + "0 (can't go negative, tried to set to " + str(inv[useBag][item]["Count"]) + ")\n"
-            inv[useBag].pop(item)
-            if len(inv[useBag]) < 1 and useBag != "Wallet":
-                inv.pop(useBag)
-        elif item in inv[useBag] and float(inv[useBag][item]["Count"]) == 0:
-            DESC = "Removed " + str(count) + " " + (PluralForm if count > 1 else item) + ". New total: " + str(inv[useBag][item]["Count"]) + "\n"
-            inv[useBag].pop(item)
-            if len(inv[useBag]) < 1 and useBag != "Wallet":
-                inv.pop(useBag)
-        elif item in inv[useBag]:
-            DESC = "Removed " + str(count) + " " + (PluralForm if count > 1 else item) + ". New total: " + str(inv[useBag][item]["Count"]) + "\n"
-    if item in inv[useBag]:
-        inv[useBag][item]["Cost"] = float(itemCost)
-    if item in inv[useBag]:
-        inv[useBag][item]["Weight"] = float(itemWeight)
+    else: # command == "remove"
+        if item in inv[useBag]:
+            if count >= float(inv[useBag][item]["Count"]):
+                DESC = "Removed " + str(int(inv[useBag][item]["Count"])) + " " + (PluralForm if int(inv[useBag][item]["Count"]) > 1 else item) + ". New total: 0" + (" (can't go negative, tried to set to " + (str(int(float(inv[useBag][item]["Count"]) - count))) if float(count) > float(inv[useBag][item]["Count"]) else "") + ")\n"
+                inv[useBag].pop(item)
+                if len(inv[useBag]) < 1 and useBag != "Wallet":
+                     inv.pop(useBag)
+            else:
+                inv[useBag][item]["Count"] = float(inv[useBag][item]["Count"]) - float(count)
+                DESC = "Removed " + str(count) + " " + (PluralForm if count > 1 else item) + ". New total: " + str(inv[useBag][item]["Count"]) + "\n"
+        else:
+            ERROR += f"Tried to remove {item}, but it was not found in {useBag}.\n"
     character().set_cvar("inventory", dump_json(inv))
     command = "list"
 
@@ -192,7 +171,7 @@ if command == "buy":
     itemLower = item.lower()
     for eachBag in inv:
         bag = eachBag if eachBag.lower() == bag.lower() else bag
-    useBag = bag if bag != "" else "Carried"
+    useBag = bag.capitalize() if bag != "" else "Carried"
     if useBag not in inv:
         inv[useBag] = {}
     for definedItem in [k for k in itemInfo] + [k for k in inv[useBag]]:
@@ -349,19 +328,21 @@ if command == "exchangecurrency":
     mod = 0
     if "CP" in inv["Wallet"]:
         totalCPValue = float(inv["Wallet"]["CP"]["Count"])
-        inv["Wallet"]["CP"]["Count"] = 0
+        inv["Wallet"].pop("CP")
     if "SP" in inv["Wallet"]:
         totalCPValue = totalCPValue + (float(inv["Wallet"]["SP"]["Count"]) * 10)
-        inv["Wallet"]["SP"]["Count"] = 0
-    if "EP" in inv["Wallet"]:
-        totalCPValue = totalCPValue + (float(inv["Wallet"]["EP"]["Count"]) * 20)
-        inv["Wallet"]["EP"]["Count"] = 0
+        inv["Wallet"].pop("SP")
+    if "useEP" in settings and settings["useEP"].lower() == "true":
+        if "EP" in inv["Wallet"]:
+            totalCPValue = totalCPValue + (float(inv["Wallet"]["EP"]["Count"]) * 50)
+            inv["Wallet"].pop("EP")
     if "GP" in inv["Wallet"]:
         totalCPValue = totalCPValue + (float(inv["Wallet"]["GP"]["Count"]) * 100)
-        inv["Wallet"]["GP"]["Count"] = 0
-    if "PP" in inv["Wallet"]:
-        totalCPValue = totalCPValue + (float(inv["Wallet"]["PP"]["Count"]) * 1000)
-        inv["Wallet"]["PP"]["Count"] = 0
+        inv["Wallet"].pop("GP")
+    if "usePP" in settings and settings["usePP"].lower() == "true":
+        if "PP" in inv["Wallet"]:
+            totalCPValue = totalCPValue + (float(inv["Wallet"]["PP"]["Count"]) * 1000)
+            inv["Wallet"].pop("PP")
     if "usePP" in settings and settings["usePP"].lower() == "true":
         mod = totalCPValue % 1000
         totalPPCount = ( totalCPValue - mod ) / 1000
@@ -370,44 +351,24 @@ if command == "exchangecurrency":
     totalGPCount = ( totalCPValue - mod ) / 100
     totalCPValue = totalCPValue - (totalGPCount * 100)
     if "useEP" in settings and settings["useEP"].lower() == "true":
-        mod = totalCPValue % 20
-        totalEPCount = ( totalCPValue - mod ) / 20
-        totalCPValue = totalCPValue - (totalEPCount * 20)
+        mod = totalCPValue % 50
+        totalEPCount = ( totalCPValue - mod ) / 50
+        totalCPValue = totalCPValue - (totalEPCount * 50)
     mod = totalCPValue % 10
     totalSPCount = ( totalCPValue - mod ) / 10
     totalCPValue = totalCPValue - (totalSPCount * 10)
-    if "CP" in inv["Wallet"] and totalCPValue > 0:
-        inv["Wallet"]["CP"]["Count"] = totalCPValue
-    elif totalCPValue > 1:
-        inv["Wallet"]["CP"] = {"Count": totalCPValue, "Value": 0.01, "Weight": 0.02}
-    else:
-        inv["Wallet"].pop("CP", none)
-    if "SP" in inv["Wallet"] and totalSPCount > 0:
-        inv["Wallet"]["SP"]["Count"] = totalSPCount
-    elif totalSPCount > 1:
-        inv["Wallet"]["SP"] = {"Count": totalSPValue, "Value": 0.1, "Weight": 0.02}
-    else:
-        inv["Wallet"].pop("SP", none)
+    if totalCPValue > 0:
+        inv["Wallet"]["CP"] = {"Count": totalCPValue, "Cost": 0.01, "Weight": 0.02}
+    if totalSPCount > 0:
+        inv["Wallet"]["SP"] = {"Count": totalSPCount, "Cost": 0.1, "Weight": 0.02}
     if "useEP" in settings and settings["useEP"].lower() == "true":
-        if "EP" in inv["Wallet"] and totalEPCount > 0:
-            inv["Wallet"]["EP"]["Count"] = totalEPCount
-        elif totalEPCount > 1:
-            inv["Wallet"]["EP"] = {"Count": totalEPValue, "Value": 0.2, "Weight": 0.02}
-        else:
-            inv["Wallet"].pop("EP", none)
-    if "GP" in inv["Wallet"] and totalGPCount > 0:
-        inv["Wallet"]["GP"]["Count"] = totalGPCount
-    elif totalGPCount > 1:
-        inv["Wallet"]["GP"] = {"Count": totalGPValue, "Value": 1.0, "Weight": 0.02}
-    else:
-        inv["Wallet"].pop("GP", none)
+        if totalEPCount > 0:
+            inv["Wallet"]["EP"] = {"Count": totalEPCount, "Cost": 0.2, "Weight": 0.02}
+    if totalGPCount > 0:
+        inv["Wallet"]["GP"] = {"Count": totalGPCount, "Cost": 1.0, "Weight": 0.02}
     if "usePP" in settings and settings["usePP"].lower() == "true":
-        if "PP" in inv["Wallet"] and totalPPCount > 0:
-            inv["Wallet"]["PP"]["Count"] = totalPPCount
-        elif totalPPCount > 1:
-            inv["Wallet"]["PP"] = {"Count": totalPPValue, "Value": 10.0, "Weight": 0.02}
-        else:
-            inv["Wallet"].pop("PP", none)
+        if totalPPCount > 0:
+            inv["Wallet"]["PP"] = {"Count": totalPPCount, "Cost": 10.0, "Weight": 0.02}
     DESC = "Currency conversion completed\n"
 
     character().set_cvar("inventory", dump_json(inv))
@@ -417,18 +378,22 @@ if command == "exchangecurrency":
 if command == "move":
     for eachBag in inv:
         bag = eachBag if eachBag.lower() == bag.lower() else bag
-        newbag = eachBag if eachBag.lower() == newbag.lower() else newbag
+        newbag = eachBag if eachBag.lower() == newbag.lower() else newbag.capitalize()
     if bag == "" or newbag == "":
-        ERROR = f"Move requires -bag and -newbag be set\n{ERROR}"
+        INITIALHEADER = "Move requires -bag and -newbag be set\n"
+        INITIALBODY = "Please try again."
     elif bag not in inv:
-        ERROR = f"-bag ({bag})not found\n{ERROR}"
+        INITIALHEADER = f"-bag ({bag})not found\n{ERROR}"
+        INITIALBODY = "Please try again."
     else:
         if argArray[0].isdigit():
             count = float(argArray.pop(0))
         item = " ".join(argArray)
         itemLower = item.lower()
         PluralForm = item + "s"
-        if sum(i.lower().startswith(item.lower()) for i in itemInfo.keys()) == 1: # If the provided command matches a unique
+        if sum(i.lower().startswith(item.lower()) for i in inv[bag].keys()) == 1: # If the provided command matches a unique
+            item = [i for i in inv[bag].keys() if i.lower().startswith(item.lower())][0] # beginning use it ("ie: exch for exchangecurrency")
+        elif sum(i.lower().startswith(item.lower()) for i in itemInfo.keys()) == 1: # If the provided command matches a unique
             item = [i for i in itemInfo.keys() if i.lower().startswith(item.lower())][0] # beginning use it ("ie: exch for exchangecurrency")
         for definedItem in [k for k in itemInfo]: # Check for pluralized item names
             tmpPluralForm = PluralForm
@@ -466,44 +431,44 @@ if command == "move":
             if float(inv[bag][item]["Count"]) < 1.0:
                 inv[bag].pop(item)
     character().set_cvar("inventory", dump_json(inv))
-    bag = ""
+    bag = f"{bag}&&{newbag}"
+    command = "list"
 
+
+if command == "search":
+    item = " ".join(argArray)
+    itemLower = item.lower()
+    matches = []
+    if bag == "":
+        for eachBag in inv:
+            matches = matches + [{"Name": i, "Count": inv[eachBag][i]["Count"], "Bag": eachBag} for i in inv[eachBag].keys() if item.lower() in i.lower()]
+    else:
+        matches = [i for i in inv[bag].keys() if i.lower().contains(item.lower())]
+    total = 0
+    INITIALBODY = ''
+    for eachItem in matches:
+        total = total + int(eachItem["Count"])
+        INITIALBODY = f"{INITIALBODY}\n{int(eachItem['Count'])} {eachItem['Name'] if int(eachItem['Count']) == 1 else PluralForm} in {eachItem['Bag']}"
+    INITIALHEADER = f"Found {total} matches for {item}"
 
 if command == "export":
     INITIALHEADER = "Save this and use: !import <text> to reset"
     INITIALBODY = f'`{inventory}`'
 
 
-if command == "help":
-    TITLE = "Documentation"
-    INITIALHEADER = "!inv commands:"
-    INITIALBODY = "list: List current inventory (default command)\n"\
-              "add [count] <item>: Adds number of items (defaults to 1)\n"\
-              "remove [count] <item>: Removes given number of items (defaults to 1)\n"\
-              "buy [count] <item>: Buys number of items from available funds (defaults to 1)\n"\
-              "search <text>: Search for items matching text\n"\
-              "exchangecurrency: Exchange currency. (ie: 100cp becomes 1gp)\n"\
-              "import <export string>: Imports string from export command. Will *replace ALL* existing inventory\n"\
-              "export: Prints string that can be used to import inventory exactly\n"\
-              "purge: Purge ALL inventory (irreversible)."\
-              "settings: Display available settings and their defaults"\
-              "help|?: This help text\n"
-              
-
-if command == "settings":
-    TITLE = "Configuration"
-    INITIALHEADER = "Settings for \"inventorySettings\" svar"
-    INITIALBODY = "Optional settings that can be defined in svar \"inventorySettings\" and their defaults are:\n"\
-              "additionalGVARs: ([]) Load GVAR lists in ascending order. IE: [1] overwrites the same item in [0]"\
-              "disablePurge: (false) Will disable use of \"purge\" command\n"\
-              "itemInfoGVAR: (66f684d2-42d5-4b0e-8231-c0d6c52b672d) Use given GVAR as list of item info. See default for format\n"\
-              "useEP: (false) Use EP when exchanging or buying\n"\
-              "usePP: (false) Use PP when exchanging or buying\n"
-
-
 if command == "import":
     importString = " ".join(argArray)
     inv=load_json(importString)
+    for eachBag in inv:
+        for item in inv[eachBag]:
+            if item in itemInfo:
+                if "Cost" in itemInfo[item]:
+                    inv[eachBag][item]["Cost"] = itemInfo[item].Cost
+                if "Weight" in itemInfo[item]:
+                    inv[eachBag][item]["Weight"] = itemInfo[item].Weight
+            else:
+                inv[eachBag][item]["Cost"] = -1.0
+                inv[eachBag][item]["Weight"] = -1.0
     character().set_cvar("inventory", dump_json(inv))
     command = "list"
 
@@ -517,7 +482,7 @@ if command == "purge":
         command = "list"
 
 
-if command == "search":
+if command == "shop":
     searchTerm = " ".join(argArray)
     searchTermLower = searchTerm.lower()
     matchingItems = []
@@ -551,8 +516,51 @@ if command == "search":
 
 
 msgs = []
+if command == "help":
+    TITLE = "Documentation"
+    DESC = "Does this disappear before you finish reading? add -keep"
+    CmdHeader = "!inv commands:"
+    CmdBody = "**list**: List current inventory (default command)\n"\
+              "**add [count] <item>**: Adds number of items (defaults to 1)\n"\
+              "**+[count] <item>**: Adds number of items (defaults to 1)\n"\
+              "**remove [count] <item>**: Removes given number of items (defaults to 1)\n"\
+              "**-[count] <item>**: Removes given number of items (defaults to 1)\n"\
+              "**buy [count] <item>**: Buys number of items from available funds (defaults to 1)\n"\
+              "**move -bag <from bag> -newbag <to bag> [count] <item>**: Buys number of items from available funds (defaults to 1)\n"\
+              "**search <text>**: Search inventory for items matching text\n"\
+              "**shop <text>**: Search all item list for items matching text\n"\
+              "**exchangecurrency**: Exchange currency. (ie: 110cp becomes 1gp, 1sp)\n"\
+              "**export**: Prints string that can be used to import inventory exactly\n"\
+              "**import <export string>**: Imports string from export command. Will **replace ALL** existing inventory\n"\
+              "**purge**: Purge ALL inventory (irreversible)."\
+              "**help|?**: This help text\n"
+    OptionsHeader = "Some optional flags"
+    OptionsBody = "**-bag <bag name>** | This will make the command you are using operate on the given container.\n"\
+                  "**-keep** | This flag will make the message stay. Default is to remove it after 10 seconds\n"\
+                  "**-count** | This flag will make the message stay. Default is to remove it after 10 seconds\n"\
+                  "**-cost** | Override the cost of an item\n"\
+                  "**-weight** | Override the weight of an item\n"
+    SettingsHeader = "Settings for \"inventorySettings\" svar"
+    SettingsBody = "Optional settings that can be defined in svar \"inventorySettings\" and their defaults are:\n"\
+                   "**additionalGVARs**: ([]) Load GVAR lists in ascending order. IE: [1] overwrites the same item in [0]\n"\
+                   "**disablePurge**: (false) Will disable use of \"purge\" command\n"\
+                   "**itemInfoGVAR**: (66f684d2-42d5-4b0e-8231-c0d6c52b672d) Use given GVAR as list of item info. See default for format\n"\
+                   "**useEP**: (false) Use EP when exchanging or buying\n"\
+                   "**usePP**: (false) Use PP when exchanging or buying\n"
+    ExampleHeader = "Settings for \"inventorySettings\" svar"
+    ExampleBody = "Provided below are some examples:\n"\
+                  "**!inv add 3 daggers** | This will add 3 daggers to \"Carried\"\n"\
+                  "**!inv +3 daggers** | This will add 3 daggers to \"Carried\"\n"\
+                  "**!inv add 3 daggers -bag belt** | This will add 3 daggers to \"Belt\"\n"\
+                  "**!inv remove 3 daggers** | This will remove 3 daggers from \"Belt\"\n"\
+                  "**!inv move 3 daggers -bag carried -newbag belt** | This will move 3 daggers from \"Carried\" to \"Belt\"\n"\
+                  "**!inv buy 3 daggers -bag wielded** | This will buy 3 daggers from funds carried in \"Wallet\" and place in \"Wielded\"\n"\
+                  "**!inv search daggers** | This will search for how many daggers you have\n"
+    msgs.append(f"{timeout} -title \"{TITLE}\" -desc \"{ERROR}{DESC}\" -f \"{CmdHeader}|{CmdBody}\" -f \"{OptionsHeader}|{OptionsBody}\" -f \"{SettingsHeader}|{SettingsBody}\" -f \"{ExampleHeader}|{ExampleBody}\"")
+              
+
 if INITIALBODY != "" and INITIALHEADER != "":
-    msgs.append(f"-title \"{TITLE}\" -desc \"{ERROR}{DESC}\" -f \"{INITIALHEADER}|{INITIALBODY}\"")
+    msgs.append(f"{timeout} -title \"{TITLE}\" -desc \"{ERROR}{DESC}\" -f \"{INITIALHEADER}|{INITIALBODY}\"")
     ERROR=""
     DESC=""
 
@@ -584,15 +592,23 @@ if command == "list": # Listed last as other commands will do work and then set 
     msgNum = 0
     if DESC == "":
         DESC = "Current inventory:"
-    msgs.append(f"-title \"{TITLE}\" -desc \"{ERROR}{DESC}\"")
-    for eachBag in inv:
-        bag = eachBag if eachBag.lower() == bag.lower() else bag
-    if bag != "" and bag not in inv:
-        msgs[msgNum] = msgs[msgNum] + f" -f \"ERROR|Bag ({bag}) not found\""
+    msgs.append(f"{timeout} -title \"{TITLE}\" -desc \"{ERROR}{DESC}\"")
+    wantList = inv.keys()
+    if bag != "":
+        wantList = bag.split('&&')
+    bagList = []
+    for wantBag in wantList:
+        found=0
+        for haveBag in inv:
+            if haveBag.lower() == wantBag.lower():
+                bagList.append(haveBag)
+                found=1
+        if found == 0:
+            msgs[msgNum] = msgs[msgNum] + f" -f \"ERROR|Bag ({wantBag}) not found\""
+    if len(bagList) < 1:
+        msgs[msgNum] = msgs[msgNum] + f" -f \"ERROR|No matching bags found to list\""
     else:
-        for eachBag in inv:
-            if bag != "" and bag != eachBag:
-                continue
+        for eachBag in bagList:
             if len(inv[eachBag]) < 1:
                 msgs[msgNum] = msgs[msgNum] + f" -f \"{eachBag}|*EMPTY*\""
             else:
@@ -649,4 +665,4 @@ if command == "list": # Listed last as other commands will do work and then set 
 #    output.append("{{get(\"inventoryMsgQueue" + num + "\")}}")
 #!tembed {{"\n!tembed ".join(output)}}
 </drac2>
-{{msgs[0]}}
+-thumb https://media-waterdeep.cursecdn.com/avatars/thumbnails/7/239/315/315/636284737702530626.jpeg {{msgs[0]}}
